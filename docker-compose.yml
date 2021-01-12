@@ -1,0 +1,12 @@
+version: '3.4'
+services:
+  postgres:
+    image: acme.io/postgres
+    build:
+      context: ./
+    environment:
+      - "SAMPLE_DB_USER=sampleuser"
+      - "SAMPLE_DB_PASSWORD=samplepass"
+      - "SAMPLE_DB_DATABASE=sample"
+      - "POSTGRES_USER=postgres"
+      - "POSTGRES_PASSWORD=password"

@@ -1,0 +1,93 @@
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: postgres-backup-pv-claim
+  labels:
+    app: postgres-backup
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 12Gi
+---
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: postgres-backup-pv-volume
+  labels:
+    type: local
+    app: postgres-backup
+spec:
+  capacity:
+    storage: 12Gi
+  accessModes:
+    - ReadWriteMany
+  hostPath:
+    path: "/mnt/data"
+  persistentVolumeReclaimPolicy: Retain
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: postgres-backup
+spec:
+  # Backup the database every 5 minutes
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: postgres-backup
+            image: postgres:13-alpine
+            command: ["/bin/sh", "-c", /opt/backup.sh]
+            env:
+            - name: PGPASS
+              valueFrom:
+                secretKeyRef:
+                  name: pgpass
+                  key: pgpass
+            volumeMounts:
+            - mountPath: /var/backup
+              name: postgres-backup
+            - mountPath: /opt/backup.sh
+              subPath: backup.sh
+              name: backup-config
+          restartPolicy: Never
+          volumes:
+          - name: backup-config
+            configMap:
+              name: backup-config
+              defaultMode: 0755
+          - name: postgres-backup
+            persistentVolumeClaim:
+              claimName: postgres-backup-pv-claim
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-config
+data:
+  backup.sh: |
+    #!/bin/bash
+    echo "Backing up the postgres database..."
+    echo "$PGPASS" > /root/.pgpass
+    chmod 600 /root/.pgpass 
+    
+    DUMP_FILE_NAME="backup-$(date +"%m-%d-%Y-%H-%M").sql"
+    echo "Creating dump: $DUMP_FILE_NAME"
+    pg_dump -U sampleuser -h postgres sample > /var/backup/$DUMP_FILE_NAME
+    if [ $? -ne 0 ]; then
+      rm $DUMP_FILE_NAME
+      echo "Back up not created, check db connection settings"
+      exit 1
+    fi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pgpass
+data:
+  pgpass: cG9zdGdyZXM6NTQzMjpzYW1wbGU6c2FtcGxldXNlcjpzYW1wbGVwYXNzCg==
